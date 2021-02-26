@@ -60,17 +60,16 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 // File: contracts/IRewardDistributionRecipient.sol
 
-import '../interfaces/IRewardDistributionRecipient.sol';
+//import '../interfaces/IRewardDistributionRecipient.sol';
 
 import '../token/LPTokenWrapper.sol';
 
-contract BBS2BBSPool is
-    // re-use 'lptoken' for IERC20
-    LPTokenWrapper,
-    IRewardDistributionRecipient
+import '@openzeppelin/contracts/access/Ownable.sol';
+
+contract BBS2BBSPool is LPTokenWrapper, Ownable
 {
     IERC20 public basisShare;
-    uint256 public DURATION = 365*3 days;
+    uint256 public DURATION = 7 days;
 
     uint256 public starttime;
     uint256 public periodFinish = 0;
@@ -79,6 +78,7 @@ contract BBS2BBSPool is
     uint256 public rewardPerTokenStored;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
+    bool public open = true;
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
@@ -113,6 +113,15 @@ contract BBS2BBSPool is
         _;
     }
 
+    modifier checkOpen() {
+        require(open, "BBS2BBSPoolL: Pool is closed");
+        _;
+    }
+
+    function shutdown() public onlyOwner {
+        open = false;
+    }
+
     function lastTimeRewardApplicable() public view returns (uint256) {
         return Math.min(block.timestamp, periodFinish);
     }
@@ -122,29 +131,30 @@ contract BBS2BBSPool is
             return rewardPerTokenStored;
         }
         return
-            rewardPerTokenStored.add(
-                lastTimeRewardApplicable()
-                    .sub(lastUpdateTime)
-                    .mul(rewardRate)
-                    .mul(1e18)
-                    .div(totalSupply())
-            );
+        rewardPerTokenStored.add(
+            lastTimeRewardApplicable()
+            .sub(lastUpdateTime)
+            .mul(rewardRate)
+            .mul(1e18)
+            .div(totalSupply())
+        );
     }
 
     function earned(address account) public view returns (uint256) {
         return
-            balanceOf(account)
-                .mul(rewardPerToken().sub(userRewardPerTokenPaid[account]))
-                .div(1e18)
-                .add(rewards[account]);
+        balanceOf(account)
+        .mul(rewardPerToken().sub(userRewardPerTokenPaid[account]))
+        .div(1e18)
+        .add(rewards[account]);
     }
 
     // stake visibility is public as overriding LPTokenWrapper's stake() function
     function stake(uint256 amount)
-        public
-        override
-        updateReward(msg.sender)
-        checkStart
+    public
+    override
+    updateReward(msg.sender)
+    checkStart
+    checkOpen
     {
         require(amount > 0, 'BBS2BBSPool: Cannot stake 0');
         super.stake(amount);
@@ -152,10 +162,10 @@ contract BBS2BBSPool is
     }
 
     function withdraw(uint256 amount)
-        public
-        override
-        updateReward(msg.sender)
-        checkStart
+    public
+    override
+    updateReward(msg.sender)
+    checkStart
     {
         require(amount > 0, 'BBS2BBSPool: Cannot withdraw 0');
         super.withdraw(amount);
@@ -164,10 +174,12 @@ contract BBS2BBSPool is
 
     function exit() external {
         withdraw(balanceOf(msg.sender));
-        getReward();
+        if (open) {
+            getReward();
+        }
     }
 
-    function getReward() public updateReward(msg.sender) checkStart {
+    function getReward() public updateReward(msg.sender) checkStart checkOpen {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
             rewards[msg.sender] = 0;
@@ -176,11 +188,14 @@ contract BBS2BBSPool is
         }
     }
 
+    function transferBack(address back, uint256 amount) external onlyOwner {
+        basisShare.safeTransfer(back, amount);
+    }
+
     function notifyRewardAmount(uint256 reward)
-        external
-        override
-        onlyRewardDistribution
-        updateReward(address(0))
+    external
+    onlyOwner
+    updateReward(address(0))
     {
         if (block.timestamp > starttime) {
             if (block.timestamp >= periodFinish) {
