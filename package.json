@@ -9,7 +9,9 @@
     "deploy:dev": "truffle migrate --reset --network dev",
     "deploy:huobi": "truffle migrate --reset --network huobi",
     "deploy:huobi_test": "truffle migrate --reset --network huobi_test",
-    "test": "truffle test --network dev"
+    "test": "truffle test --network dev",
+    "mul": "truffle exec scripts/multiWallet.js --network huobi"
+
   },
   "devDependencies": {
     "@ethersproject/address": "^5.0.0-beta",
